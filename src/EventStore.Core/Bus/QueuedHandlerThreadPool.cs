@@ -38,7 +38,7 @@ namespace EventStore.Core.Bus
         private readonly QueueMonitor _queueMonitor;
         private readonly QueueStatsCollector _queueStats;
 
-        private int _runState; //0 - never started, 1 - started, 2 - stopped
+        private int _runState; //0 - never started, 1 - starting, 2 - started, 3 - stopping
         private int _isRunning;
         private readonly TaskCompletionSource<object> _tcs = new TaskCompletionSource<object>();
 
@@ -75,7 +75,7 @@ namespace EventStore.Core.Bus
             if (!_stopped.Wait(_threadStopWaitTimeout))
                 throw new TimeoutException(string.Format("Unable to stop thread '{0}'.", Name));
 
-            if(Interlocked.CompareExchange(ref _runState, 2, 1) == 1)
+            if(Interlocked.CompareExchange(ref _runState, 3, 2) == 2)
                 _queueStats.Stop();
 
             _queueMonitor.Unregister(this);
@@ -90,8 +90,10 @@ namespace EventStore.Core.Bus
         private void ReadFromQueue(object o)
         {
         try{
-            if(Interlocked.CompareExchange(ref _runState, 1, 0) == 0)
+            if(Interlocked.CompareExchange(ref _runState, 1, 0) == 0){
                 _queueStats.Start();
+                Interlocked.CompareExchange(ref _runState, 2, 1);
+            }
 
             bool proceed = true;
             while (proceed)
@@ -143,7 +145,7 @@ namespace EventStore.Core.Bus
                 }
 
                 if(_stop){
-                    if(Interlocked.CompareExchange(ref _runState, 2, 1) == 1)
+                    if(Interlocked.CompareExchange(ref _runState, 3, 2) == 2)
                         _queueStats.Stop();
                 }
                 else
